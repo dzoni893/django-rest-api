@@ -7,6 +7,7 @@ from rest_framework import status
 
 CREATE_USER_URL = reverse("user:create")
 TOKEN_URL = reverse('user:token')
+ME_URL = reverse('user:me')
 
 
 def create_user(**params):
@@ -92,3 +93,47 @@ class PublicUserApiTests(TestCase):
         res = self.client.post(TOKEN_URL, {'email': 'one', 'password': ''})
         self.assertNotIn('token', res.data)
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_retrieve_user_unauthorized(self):
+        """ Test that retrieve user authentication is required"""
+        res = self.client.get(ME_URL)
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class PrivateUserApiTests(TestCase):
+    """Test API that requires authentication"""
+
+    def setUp(self):
+        payload = {
+            'email': 'test@email.com',
+            'password': 'test123',
+            'name': 'Test user'
+        }
+        self.user = create_user(**payload)
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_retrieve_profile_successful(self):
+        """Test that retrieving profile is successful"""
+        res = self.client.get(ME_URL)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data, {
+            'email': self.user.email,
+            'name': self.user.name
+        })
+
+    def test_post_me_now_allowed(self):
+        """Test that post is not allwed on user me endpoint"""
+        res = self.client.post(ME_URL, {})
+        self.assertEqual(res.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def test_update_user_profile(self):
+        """Test updating the user profile for authenticated user"""
+        payload = {'name': 'new name', 'password': 'newpassword123'}
+
+        res = self.client.patch(ME_URL, payload)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.name, payload['name'])
+        self.assertTrue(self.user.check_password(payload['password']))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
